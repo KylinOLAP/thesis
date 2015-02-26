@@ -1,0 +1,240 @@
+From 326e489e1756a9d06327cb0816c77dcf6dce876e Mon Sep 17 00:00:00 2001
+From: Mustangore <mustangore@gmail.com>
+Date: Thu, 26 Feb 2015 16:23:10 +0100
+Subject: [PATCH 1/2] Add SQL Dialect for Kylin integration
+
+---
+ src/main/META-INF/services/mondrian.spi.Dialect |  1 +
+ src/main/mondrian/spi/Dialect.java              |  1 +
+ src/main/mondrian/spi/impl/JdbcDialectImpl.java |  2 ++
+ src/main/mondrian/spi/impl/KylinDialect.java    | 35 +++++++++++++++++++++++++
+ 4 files changed, 39 insertions(+)
+ create mode 100644 src/main/mondrian/spi/impl/KylinDialect.java
+
+diff --git a/src/main/META-INF/services/mondrian.spi.Dialect b/src/main/META-INF/services/mondrian.spi.Dialect
+index 6e7d244..ad7e3c3 100644
+--- a/src/main/META-INF/services/mondrian.spi.Dialect
++++ b/src/main/META-INF/services/mondrian.spi.Dialect
+@@ -25,3 +25,4 @@ mondrian.spi.impl.TeradataDialect
+ mondrian.spi.impl.VectorwiseDialect
+ mondrian.spi.impl.VerticaDialect
+ mondrian.spi.impl.IngresDialect
++mondrian.spi.impl.KylinDialect
+\ No newline at end of file
+diff --git a/src/main/mondrian/spi/Dialect.java b/src/main/mondrian/spi/Dialect.java
+index bbad3a2..8f1fe55 100644
+--- a/src/main/mondrian/spi/Dialect.java
++++ b/src/main/mondrian/spi/Dialect.java
+@@ -825,6 +825,7 @@ public interface Dialect {
+         INFOBRIGHT,
+         INGRES,
+         INTERBASE,
++        KYLIN,
+         LUCIDDB,
+         MSSQL,
+         MONETDB,
+diff --git a/src/main/mondrian/spi/impl/JdbcDialectImpl.java b/src/main/mondrian/spi/impl/JdbcDialectImpl.java
+index a529339..3f01a61 100644
+--- a/src/main/mondrian/spi/impl/JdbcDialectImpl.java
++++ b/src/main/mondrian/spi/impl/JdbcDialectImpl.java
+@@ -1067,6 +1067,8 @@ public class JdbcDialectImpl implements Dialect {
+             return DatabaseProduct.INGRES;
+         } else if (productName.equals("Interbase")) {
+             return DatabaseProduct.INTERBASE;
++        } else if (upperProductName.equals("KYLIN")) {
++            return DatabaseProduct.KYLIN;
+         } else if (upperProductName.equals("LUCIDDB")
+             || upperProductName.equals("OPTIQ"))
+         {
+diff --git a/src/main/mondrian/spi/impl/KylinDialect.java b/src/main/mondrian/spi/impl/KylinDialect.java
+new file mode 100644
+index 0000000..b05ca0f
+--- /dev/null
++++ b/src/main/mondrian/spi/impl/KylinDialect.java
+@@ -0,0 +1,35 @@
++package mondrian.spi.impl;
++
++import java.sql.Connection;
++import java.sql.SQLException;
++
++public class KylinDialect extends JdbcDialectImpl {
++
++	public static final JdbcDialectFactory FACTORY =
++        new JdbcDialectFactory(KylinDialect.class, DatabaseProduct.KYLIN) {
++            protected boolean acceptsConnection(Connection connection) {
++                return super.acceptsConnection(connection);
++            }
++        };
++
++	/**
++     * Creates a KylinDialect
++     *
++     * @param connection Connection
++     *
++     * @throws SQLException on error
++     */
++    public KylinDialect(Connection connection) throws SQLException {
++        super(connection);
++    }
++
++	@Override
++	public boolean allowsCountDistinct() {
++        return false;
++    }
++
++	@Override
++	public boolean allowsJoinOn() {
++        return true;
++    }
++}
+-- 
+1.9.3 (Apple Git-50)
+
+
+From 7497cbcee1f409eb4ce7d0329a3ac7522cf197bd Mon Sep 17 00:00:00 2001
+From: Mustangore <mustangore@gmail.com>
+Date: Thu, 26 Feb 2015 16:23:57 +0100
+Subject: [PATCH 2/2] Create explicit join conditions if Jdbc Dialect
+ allowsJoinOn
+
+---
+ src/main/mondrian/rolap/RolapStar.java       | 39 +++++++++++++++++++++++-----
+ src/main/mondrian/rolap/SqlMemberSource.java |  2 +-
+ src/main/mondrian/rolap/sql/SqlQuery.java    | 19 ++++++++------
+ 3 files changed, 45 insertions(+), 15 deletions(-)
+
+diff --git a/src/main/mondrian/rolap/RolapStar.java b/src/main/mondrian/rolap/RolapStar.java
+index dd460b5..c2888f4 100644
+--- a/src/main/mondrian/rolap/RolapStar.java
++++ b/src/main/mondrian/rolap/RolapStar.java
+@@ -1744,14 +1744,41 @@ public class RolapStar {
+             boolean failIfExists,
+             boolean joinToParent)
+         {
+-            query.addFrom(relation, alias, failIfExists);
++//        	query.addFrom(relation, alias, failIfExists);
++//        	Util.assertTrue((parent == null) == (joinCondition == null));
++//            if (joinToParent) {
++//                if (parent != null) {
++//                    parent.addToFrom(query, failIfExists, joinToParent);
++//                }
++//                if (joinCondition != null) {
++//                    query.addWhere(joinCondition.toString(query));
++//                }
++//            }
++
+             Util.assertTrue((parent == null) == (joinCondition == null));
+-            if (joinToParent) {
+-                if (parent != null) {
+-                    parent.addToFrom(query, failIfExists, joinToParent);
++            if (query.getDialect().allowsJoinOn()) {
++                if (joinToParent && parent != null) {
++                    query.addJoin(
++                        relation,
++                        joinCondition.right.getTableAlias(),
++                        ((MondrianDef.Column)joinCondition.right).name,
++                        parent.relation,
++                        joinCondition.left.getTableAlias(),
++                        ((MondrianDef.Column)joinCondition.left).name,
++                        failIfExists,
++                        false);
++                } else {
++                    query.addFrom(relation, alias, failIfExists);
+                 }
+-                if (joinCondition != null) {
+-                    query.addWhere(joinCondition.toString(query));
++            } else {
++                query.addFrom(relation, alias, failIfExists);
++                if (joinToParent) {
++                    if (parent != null) {
++                        parent.addToFrom(query, failIfExists, joinToParent);
++                    }
++                    if (joinCondition != null) {
++                        query.addWhere(joinCondition.toString(query));
++                    }
+                 }
+             }
+         }
+diff --git a/src/main/mondrian/rolap/SqlMemberSource.java b/src/main/mondrian/rolap/SqlMemberSource.java
+index 9c942ed..11b581f 100644
+--- a/src/main/mondrian/rolap/SqlMemberSource.java
++++ b/src/main/mondrian/rolap/SqlMemberSource.java
+@@ -1274,7 +1274,7 @@ RME is this right
+             final MondrianDef.Expression exp = property.getExp();
+             hierarchy.addToFrom(sqlQuery, exp);
+             final String s = exp.getExpression(sqlQuery);
+-            String alias = sqlQuery.addSelect(s, null);
++            String alias = sqlQuery.addSelect(s, null, null);
+             // Some dialects allow us to eliminate properties from the group by
+             // that are functionally dependent on the level value
+             if (!sqlQuery.getDialect().allowsSelectNotInGroupBy()
+diff --git a/src/main/mondrian/rolap/sql/SqlQuery.java b/src/main/mondrian/rolap/sql/SqlQuery.java
+index 45aeaf5..00c06db 100644
+--- a/src/main/mondrian/rolap/sql/SqlQuery.java
++++ b/src/main/mondrian/rolap/sql/SqlQuery.java
+@@ -385,26 +385,28 @@ public class SqlQuery {
+                 join.right,
+                 join.getRightAlias(),
+                 join.rightKey,
+-                failIfExists);
++                failIfExists,
++                true);
+         } else {
+             throw Util.newInternal("bad relation type " + relation);
+         }
+     }
+ 
+-    private boolean addJoin(
++    public boolean addJoin(
+         MondrianDef.RelationOrJoin left,
+         String leftAlias,
+         String leftKey,
+         MondrianDef.RelationOrJoin right,
+         String rightAlias,
+         String rightKey,
+-        boolean failIfExists)
++        boolean failIfExists,
++        boolean checkIfAdded)
+     {
+         boolean addLeft = addFrom(left, leftAlias, failIfExists);
+         boolean addRight = addFrom(right, rightAlias, failIfExists);
+ 
+         boolean added = addLeft || addRight;
+-        if (added) {
++        if (!checkIfAdded || added) {
+             buf.setLength(0);
+ 
+             dialect.quoteIdentifier(buf, leftAlias, leftKey);
+@@ -447,7 +449,8 @@ public class SqlQuery {
+                         ? relInfo.rightAlias
+                         : relations.get(i + 1).relation.getAlias(),
+                     relInfo.rightKey,
+-                    false);
++                    false,
++                    true);
+         }
+     }
+ 
+@@ -489,7 +492,7 @@ public class SqlQuery {
+         final String expression,
+         SqlStatement.Type type)
+     {
+-        final String alias = addSelect(expression, type);
++        final String alias = addSelect(expression, type, null);
+         addGroupBy(expression, alias);
+         return alias;
+     }
+@@ -655,8 +658,8 @@ public class SqlQuery {
+         final String first = distinct ? "select distinct " : "select ";
+         select.toBuffer(buf, generateFormattedSql, prefix, first, ", ", "", "");
+         groupingFunctionsToBuffer(buf, prefix);
+-        from.toBuffer(
+-            buf, generateFormattedSql, prefix, " from ", ", ", "", "");
++        from.toBuffer(buf, fromAliases);
++//        from.toBuffer(buf, generateFormattedSql, prefix, " from ", ", ", "", "");
+         where.toBuffer(
+             buf, generateFormattedSql, prefix, " where ", " and ", "", "");
+         if (groupingSets.isEmpty()) {
+-- 
+1.9.3 (Apple Git-50)
+
