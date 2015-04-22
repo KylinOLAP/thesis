@@ -1,7 +1,7 @@
 From 9db24058c87b53f7e11f055e649dbb9a1c6a30fd Mon Sep 17 00:00:00 2001
 From: Mustangore <sebastien.jelsch@inovex.de>
 Date: Wed, 22 Apr 2015 11:38:40 +0200
-Subject: [PATCH] Integrate mondrian to kylin for mdx api
+Subject: [PATCH 1/2] Integrate mondrian to kylin for mdx api
 
 ---
  server/pom.xml                                     | 64 ++++++++++++++-
@@ -555,6 +555,49 @@ index 8a72f09..0977d33 100644
          "url": "/admin",
          "params": {
              "templateUrl": "partials/admin/admin.html",
+-- 
+1.9.5 (Apple Git-50.3)
+
+
+From fe71fae65f3274751499c9bc4a645bb47d0ad4ab Mon Sep 17 00:00:00 2001
+From: Mustangore <sebastien.jelsch@inovex.de>
+Date: Wed, 22 Apr 2015 11:52:56 +0200
+Subject: [PATCH 2/2] Remove useless MdxService components
+
+---
+ .../src/main/java/com/kylinolap/rest/controller/MdxController.java   | 5 -----
+ 1 file changed, 5 deletions(-)
+
+diff --git a/server/src/main/java/com/kylinolap/rest/controller/MdxController.java b/server/src/main/java/com/kylinolap/rest/controller/MdxController.java
+index 4fb5fbc..282689d 100644
+--- a/server/src/main/java/com/kylinolap/rest/controller/MdxController.java
++++ b/server/src/main/java/com/kylinolap/rest/controller/MdxController.java
+@@ -28,7 +28,6 @@ import org.olap4j.OlapConnection;
+ import org.olap4j.OlapStatement;
+ import org.slf4j.Logger;
+ import org.slf4j.LoggerFactory;
+-import org.springframework.beans.factory.annotation.Autowired;
+ import org.springframework.stereotype.Controller;
+ import org.springframework.web.bind.annotation.RequestBody;
+ import org.springframework.web.bind.annotation.RequestMapping;
+@@ -38,7 +37,6 @@ import org.springframework.web.bind.annotation.ResponseBody;
+ import com.codahale.metrics.annotation.Timed;
+ import com.kylinolap.rest.request.MdxRequest;
+ import com.kylinolap.rest.response.MdxResponse;
+-import com.kylinolap.rest.service.MdxService;
+ 
+ /**
+  * Handle mdx requests.
+@@ -50,9 +48,6 @@ public class MdxController extends BasicController {
+ 
+     private static final Logger logger = LoggerFactory.getLogger(MdxController.class);
+ 
+-    @Autowired
+-    private MdxService mdxService;
+-
+     @RequestMapping(value = "/mdx", method = RequestMethod.POST)
+     @ResponseBody
+     @Timed(name = "mdx")
 -- 
 1.9.5 (Apple Git-50.3)
 
